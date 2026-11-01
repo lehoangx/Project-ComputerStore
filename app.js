@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Cấu hình session
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'secret-key-sqa-group2-computerstore',
+    secret: process.env.SESSION_SECRET || 'dev_secret_key',
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false } 
