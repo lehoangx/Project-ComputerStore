@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const connectDB = require('./config/db');
 const session = require('express-session');
 require('dotenv').config();
@@ -17,8 +18,18 @@ const clientController = require('./controllers/clientController');
 // Khởi tạo Express app
 const app = express();
 
-// Kết nối database
+// Kết nối database khi khởi tạo
 connectDB();
+
+// Middleware đảm bảo kết nối DB cho mỗi request (đặc biệt quan trọng trên serverless)
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+    } catch (err) {
+        console.error('Lỗi kết nối DB trong middleware:', err.message);
+    }
+    next();
+});
 
 // Middleware
 app.use(express.json());
@@ -26,19 +37,22 @@ app.use(express.urlencoded({ extended: true }));
 
 // Cấu hình session
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'secret-key-sqa-group2-computerstore',
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false } 
 }));
 
-// Set view engine
+// Set view engine - hỗ trợ cả local và Netlify Functions packaging
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+const viewsPath = fs.existsSync(path.join(__dirname, 'views'))
+    ? path.join(__dirname, 'views')
+    : path.join(process.cwd(), 'views');
+app.set('views', viewsPath);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 
 // Middleware để lấy thông tin người dùng hiện tại
@@ -65,13 +79,18 @@ app.use('/auth', authRoutes);
 app.use((req, res) => {
     res.status(404).render('404', { 
         title: 'Không tìm thấy trang',
-        user: req.session.user,
+        user: req.session ? req.session.user : null,
         categories: res.locals.categories || []
     });
 });
 
-// Port
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server đang chạy trên port http://localhost:${PORT}`);
-});
+// Chỉ lắng nghe PORT khi chạy trực tiếp file này (local hoặc traditional hosting)
+// Khi được require bởi Netlify Serverless Functions, không khởi động listener
+if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server đang chạy trên port http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;
