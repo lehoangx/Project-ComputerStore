@@ -14,3 +14,4 @@ exports.handler = async (event, context) => {
 
   return await serverlessHandler(event, context);
 };
+
