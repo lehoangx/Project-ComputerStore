@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const ejs = require('ejs');
 const connectDB = require('./config/db');
 const session = require('express-session');
 require('dotenv').config();
@@ -44,6 +45,7 @@ app.use(session({
 }));
 
 // Set view engine - hỗ trợ cả local và Netlify Functions packaging
+app.engine('ejs', ejs.__express);
 app.set('view engine', 'ejs');
 const viewsPath = fs.existsSync(path.join(__dirname, 'views'))
     ? path.join(__dirname, 'views')

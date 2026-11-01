@@ -1,4 +1,5 @@
 const serverless = require('serverless-http');
+const ejs = require('ejs');
 const app = require('../../app');
 
 const serverlessHandler = serverless(app);
