@@ -75,13 +75,13 @@
                                     <a href="/admin/coupons/add" class="btn btn-primary">Thêm mã khuyến mãi</a>
                                 </div>
                                 
-                                <% if (error) { %>
+                                <% if (typeof error !== 'undefined' && error) { %>
                                     <div class="alert alert-danger">
                                         <%= error %>
                                     </div>
                                 <% } %>
                                 
-                                <% if (success) { %>
+                                <% if (typeof success !== 'undefined' && success) { %>
                                     <div class="alert alert-success">
                                         <% if (success === 'added') { %>
                                             Đã thêm mã khuyến mãi thành công

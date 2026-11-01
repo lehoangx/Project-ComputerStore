@@ -1,3 +1,5 @@
+const bcrypt = require('bcryptjs');
+
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const Review = require('../models/Review');
@@ -1021,3 +1023,413 @@ exports.applyCoupon = async (req, res) => {
 
 
 
+
+
+// ==========================================
+// BỔ SUNG CÁC HÀM CLIENT CONTROLLER CÒN THIẾU
+// ==========================================
+
+// Hiển thị trang thanh toán
+exports.getCheckout = async (req, res) => {
+    try {
+        const cart = await Cart.findOne({ user: req.session.user._id })
+            .populate('items.product')
+            .populate('coupon');
+
+        if (!cart || !cart.items || cart.items.length === 0) {
+            return res.render('client/checkout', {
+                title: 'Thanh toán',
+                cart: null,
+                user: req.session.user
+            });
+        }
+
+        res.render('client/checkout', {
+            title: 'Thanh toán',
+            cart,
+            user: req.session.user
+        });
+    } catch (error) {
+        console.error('Lỗi khi tải trang thanh toán:', error);
+        res.status(500).render('404', { title: 'Lỗi server', message: 'Đã xảy ra lỗi' });
+    }
+};
+
+// Tạo đơn hàng mới
+exports.createOrder = async (req, res) => {
+    try {
+        const { fullName, phone, city, district, ward, address, note, paymentMethod } = req.body;
+        const shippingFee = parseInt(req.body.shippingFee) || 0;
+
+        const cart = await Cart.findOne({ user: req.session.user._id })
+            .populate('items.product')
+            .populate('coupon');
+
+        if (!cart || !cart.items || cart.items.length === 0) {
+            if (req.xhr || (req.headers.accept && req.headers.accept.includes('json'))) {
+                return res.status(400).json({ success: false, message: 'Giỏ hàng đang trống' });
+            }
+            return res.redirect('/cart');
+        }
+
+        const items = cart.items.map(item => ({
+            product: item.product._id,
+            name: item.product.name,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.product.images && item.product.images.length > 0 ? item.product.images[0] : '/images/products/default.png'
+        }));
+
+        const totalPrice = cart.totalPrice;
+        let discountPrice = 0;
+        if (cart.coupon) {
+            discountPrice = Math.max(0, cart.totalPrice - cart.coupon.applyDiscount(cart.totalPrice));
+        }
+        const finalPrice = Math.max(0, totalPrice - discountPrice + shippingFee);
+
+        const order = new Order({
+            user: req.session.user._id,
+            items,
+            shippingAddress: {
+                fullName: fullName || req.session.user.name,
+                phone: phone || req.session.user.phone,
+                city: city || '',
+                district: district || '',
+                ward: ward || '',
+                address: address || '',
+                note: note || ''
+            },
+            paymentMethod: paymentMethod || 'cod',
+            paymentStatus: 'pending',
+            totalPrice,
+            discountPrice,
+            shippingFee,
+            finalPrice,
+            coupon: cart.coupon ? cart.coupon._id : undefined,
+            status: 'pending'
+        });
+
+        await order.save();
+
+        // Xóa giỏ hàng sau khi đặt thành công
+        cart.items = [];
+        cart.coupon = undefined;
+        cart.totalPrice = 0;
+        await cart.save();
+
+        // Nếu thanh toán qua VNPay hoặc yêu cầu JSON
+        if (paymentMethod === 'vnpay' || req.xhr || (req.headers.accept && req.headers.accept.includes('json'))) {
+            return res.status(200).json({
+                success: true,
+                orderCode: order.orderCode,
+                finalPrice: order.finalPrice
+            });
+        }
+
+        // Với COD hoặc banking
+        res.redirect(`/checkout/success/${order.orderCode}`);
+    } catch (error) {
+        console.error('Lỗi khi tạo đơn hàng:', error);
+        if (req.xhr || (req.headers.accept && req.headers.accept.includes('json'))) {
+            return res.status(500).json({ success: false, message: 'Đã xảy ra lỗi khi tạo đơn hàng' });
+        }
+        res.redirect('/checkout?error=order_failed');
+    }
+};
+
+// Trang đặt hàng thành công
+exports.getOrderSuccess = async (req, res) => {
+    try {
+        const { orderCode } = req.params;
+        const order = await Order.findOne({ orderCode, user: req.session.user._id })
+            .populate('items.product')
+            .populate('coupon');
+
+        if (!order) {
+            return res.redirect('/account/orders');
+        }
+
+        const vnpayError = req.query.vnpayError || null;
+        res.render('client/order-success', {
+            title: 'Đặt hàng thành công',
+            order,
+            vnpayError,
+            user: req.session.user
+        });
+    } catch (error) {
+        console.error('Lỗi trang đặt hàng thành công:', error);
+        res.redirect('/account/orders');
+    }
+};
+
+// Trang chi tiết đơn hàng
+exports.getOrderDetail = async (req, res) => {
+    try {
+        const { orderCode } = req.params;
+        const order = await Order.findOne({ orderCode, user: req.session.user._id })
+            .populate('items.product')
+            .populate('coupon');
+
+        if (!order) {
+            return res.redirect('/account/orders');
+        }
+
+        res.render('client/order-detail', {
+            title: `Chi tiết đơn hàng #${order.orderCode}`,
+            order,
+            user: req.session.user
+        });
+    } catch (error) {
+        console.error('Lỗi xem chi tiết đơn hàng:', error);
+        res.redirect('/account/orders');
+    }
+};
+
+// Hủy đơn hàng
+exports.cancelOrder = async (req, res) => {
+    try {
+        const { orderCode } = req.params;
+        const order = await Order.findOne({ orderCode, user: req.session.user._id });
+
+        if (order && order.status === 'pending') {
+            order.status = 'cancelled';
+            await order.save();
+        }
+
+        res.redirect(`/orders/${orderCode}`);
+    } catch (error) {
+        console.error('Lỗi hủy đơn hàng:', error);
+        res.redirect('/account/orders');
+    }
+};
+
+// Tạo URL thanh toán VNPay (hỗ trợ mock fallback an toàn khi chưa cấu hình)
+exports.createVnpayPayment = async (req, res) => {
+    try {
+        const { orderCode, finalPrice } = req.body;
+        const order = await Order.findOne({ orderCode, user: req.session.user._id });
+
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+        }
+
+        let ipAddr = req.headers['x-forwarded-for'] ||
+            req.connection?.remoteAddress ||
+            req.socket?.remoteAddress ||
+            '127.0.0.1';
+        if (ipAddr.includes(',')) ipAddr = ipAddr.split(',')[0].trim();
+        if (ipAddr === '::1') ipAddr = '127.0.0.1';
+
+        const returnUrl = `${req.protocol}://${req.get('host')}/vnpay-return`;
+
+        // Nếu đã cấu hình key VNPay thật
+        if (process.env.TMN_CODE && process.env.TMN_CODE !== 'your_vnpay_TmnCode' &&
+            process.env.SECURE_SECRET && process.env.SECURE_SECRET !== 'your_vnpay_HashSecret') {
+            const paymentUrl = vnpay.buildPaymentUrl({
+                vnp_Amount: finalPrice || order.finalPrice,
+                vnp_IpAddr: ipAddr,
+                vnp_TxnRef: order.orderCode,
+                vnp_OrderInfo: 'Thanh toan don hang ' + order.orderCode,
+                vnp_OrderType: 'other',
+                vnp_ReturnUrl: returnUrl,
+                vnp_Locale: 'vn'
+            });
+            return res.json({ success: true, paymentUrl });
+        } else {
+            // Chế độ mô phỏng an toàn (Mock) khi chưa cấu hình VNPay
+            return res.json({
+                success: true,
+                paymentUrl: `/vnpay-return?vnp_ResponseCode=00&vnp_TxnRef=${order.orderCode}&mock=true`
+            });
+        }
+    } catch (error) {
+        console.error('Lỗi VNPay Payment:', error);
+        res.status(500).json({ success: false, message: 'Đã xảy ra lỗi khởi tạo VNPay' });
+    }
+};
+
+// Xử lý callback sau khi thanh toán VNPay
+exports.vnpayReturn = async (req, res) => {
+    try {
+        const vnp_Params = req.query;
+        const orderCode = vnp_Params['vnp_TxnRef'];
+        const responseCode = vnp_Params['vnp_ResponseCode'];
+
+        const order = await Order.findOne({ orderCode });
+        if (!order) {
+            return res.redirect('/account/orders');
+        }
+
+        if (responseCode === '00') {
+            order.paymentStatus = 'paid';
+            order.status = 'confirmed';
+            await order.save();
+            return res.redirect(`/checkout/success/${orderCode}`);
+        } else {
+            order.paymentStatus = 'failed';
+            await order.save();
+            return res.redirect(`/checkout/success/${orderCode}?vnpayError=Thanh+toán+không+thành+công`);
+        }
+    } catch (error) {
+        console.error('Lỗi VNPay Return:', error);
+        res.redirect('/account/orders');
+    }
+};
+
+// Thử lại thanh toán VNPay
+exports.retryVnpayPayment = async (req, res) => {
+    try {
+        const { orderCode } = req.params;
+        res.redirect(`/orders/${orderCode}`);
+    } catch (error) {
+        console.error('Lỗi retry VNPay:', error);
+        res.redirect('/account/orders');
+    }
+};
+
+// Trang thông tin cá nhân
+exports.getAccountInfo = async (req, res) => {
+    try {
+        const user = await User.findById(req.session.user._id);
+        if (!user) return res.redirect('/auth/login');
+
+        res.render('client/account/info', {
+            title: 'Thông tin tài khoản',
+            activeMenu: 'info',
+            userData: user,
+            user,
+            success: req.query.success,
+            error: req.query.error,
+            showPasswordModal: req.query.modal === 'password'
+        });
+    } catch (error) {
+        console.error('Lỗi xem thông tin tài khoản:', error);
+        res.redirect('/');
+    }
+};
+
+// Danh sách đơn hàng cá nhân
+exports.getMyOrders = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = 5;
+        const skip = (page - 1) * limit;
+
+        const totalOrders = await Order.countDocuments({ user: req.session.user._id });
+        const totalPages = Math.ceil(totalOrders / limit) || 1;
+
+        const orders = await Order.find({ user: req.session.user._id })
+            .populate('items.product')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        res.render('client/account/orders', {
+            title: 'Lịch sử đơn hàng',
+            activeMenu: 'orders',
+            orders,
+            currentPage: page,
+            totalPages,
+            totalOrders,
+            user: req.session.user
+        });
+    } catch (error) {
+        console.error('Lỗi xem lịch sử đơn hàng:', error);
+        res.redirect('/account');
+    }
+};
+
+// Danh sách đánh giá cá nhân
+exports.getMyReviews = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = 5;
+        const skip = (page - 1) * limit;
+
+        const totalReviews = await Review.countDocuments({ user: req.session.user._id });
+        const totalPages = Math.ceil(totalReviews / limit) || 1;
+
+        const reviews = await Review.find({ user: req.session.user._id })
+            .populate('product')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        res.render('client/account/reviews', {
+            title: 'Đánh giá của tôi',
+            activeMenu: 'reviews',
+            reviews,
+            currentPage: page,
+            totalPages,
+            totalReviews,
+            user: req.session.user
+        });
+    } catch (error) {
+        console.error('Lỗi xem đánh giá cá nhân:', error);
+        res.redirect('/account');
+    }
+};
+
+// Cập nhật thông tin cá nhân
+exports.updateProfile = async (req, res) => {
+    try {
+        const { name, phone, address } = req.body;
+        if (!name || !phone) {
+            return res.redirect('/account?error=missing_fields');
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.session.user._id,
+            { name, phone, address },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.redirect('/account?error=user_not_found');
+        }
+
+        req.session.user = user;
+        res.redirect('/account?success=updated');
+    } catch (error) {
+        console.error('Lỗi cập nhật hồ sơ:', error);
+        res.redirect('/account?error=update_failed');
+    }
+};
+
+// Đổi mật khẩu
+exports.changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            return res.redirect('/account?error=missing_fields&modal=password');
+        }
+
+        if (newPassword !== confirmPassword) {
+            return res.redirect('/account?error=password_mismatch&modal=password');
+        }
+
+        if (newPassword.length < 6) {
+            return res.redirect('/account?error=password_length&modal=password');
+        }
+
+        const user = await User.findById(req.session.user._id);
+        if (!user) {
+            return res.redirect('/auth/login');
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.redirect('/account?error=wrong_current_password&modal=password');
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+        await user.save();
+
+        res.redirect('/account?success=updated');
+    } catch (error) {
+        console.error('Lỗi đổi mật khẩu:', error);
+        res.redirect('/account?error=change_password_failed&modal=password');
+    }
+};

@@ -13,17 +13,17 @@
     <div class="sidebar">
         <ul class="nav flex-column">
             <li class="nav-item">
-                <a class="nav-link <%= activeMenu === 'info' ? 'active' : '' %>" href="/account">
+                <a class="nav-link <%= (typeof activeMenu !== 'undefined' && activeMenu === 'info') ? 'active' : '' %>" href="/account">
                     <i class="fas fa-user"></i> Thông tin tài khoản
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link <%= activeMenu === 'orders' ? 'active' : '' %>" href="/account/orders">
+                <a class="nav-link <%= (typeof activeMenu !== 'undefined' && activeMenu === 'orders') ? 'active' : '' %>" href="/account/orders">
                     <i class="fas fa-shopping-bag"></i> Lịch sử đơn hàng
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link <%= activeMenu === 'reviews' ? 'active' : '' %>" href="/account/reviews">
+                <a class="nav-link <%= (typeof activeMenu !== 'undefined' && activeMenu === 'reviews') ? 'active' : '' %>" href="/account/reviews">
                     <i class="fas fa-star"></i> Đánh giá của tôi
                 </a>
             </li>

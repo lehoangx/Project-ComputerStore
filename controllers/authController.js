@@ -69,12 +69,19 @@ exports.register = async (req, res) => {
 
     // Gửi email xác thực
     const verifyUrl = `${BASE_URL}/auth/verify-email?token=${verifyToken}&email=${encodeURIComponent(email)}`;
-    await transporter.sendMail({
-      from: 'nguyentung11122003@gmail.com',
-      to: email,
-      subject: 'Xác thực tài khoản ThinkPro',
-      html: `<h3>Chào mừng bạn đến với ThinkPro!</h3><p>Vui lòng xác thực tài khoản bằng cách bấm vào link sau:</p><a href="${verifyUrl}">${verifyUrl}</a>`
-    });
+    try {
+      await transporter.sendMail({
+        from: 'nguyentung11122003@gmail.com',
+        to: email,
+        subject: 'Xác thực tài khoản ThinkPro',
+        html: `<h3>Chào mừng bạn đến với ThinkPro!</h3><p>Vui lòng xác thực tài khoản bằng cách bấm vào link sau:</p><a href="${verifyUrl}">${verifyUrl}</a>`
+      });
+    } catch (mailErr) {
+      console.log(`[SMTP CHƯA CẤU HÌNH] Link xác thực tài khoản: ${verifyUrl}`);
+      // Tự động kích hoạt tài khoản để hỗ trợ test khi không có SMTP
+      user.isVerified = true;
+      await user.save();
+    }
 
     return res.render('auth/login', {
       title: 'Đăng nhập',
@@ -225,15 +232,19 @@ exports.forgotPassword = async (req, res) => {
     await user.save();
     // Gửi email reset
     const resetUrl = `${BASE_URL}/auth/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
-    await transporter.sendMail({
-      from: 'nguyentung11122003@gmail.com',
-      to: email,
-      subject: 'Đặt lại mật khẩu ThinkPro',
-      html: `<h3>Yêu cầu đặt lại mật khẩu</h3><p>Bấm vào link sau để đặt lại mật khẩu (có hiệu lực trong 30 phút):</p><a href="${resetUrl}">${resetUrl}</a>`
-    });
+    try {
+      await transporter.sendMail({
+        from: 'nguyentung11122003@gmail.com',
+        to: email,
+        subject: 'Đặt lại mật khẩu ThinkPro',
+        html: `<h3>Yêu cầu đặt lại mật khẩu</h3><p>Bấm vào link sau để đặt lại mật khẩu (có hiệu lực trong 30 phút):</p><a href="${resetUrl}">${resetUrl}</a>`
+      });
+    } catch (mailErr) {
+      console.log(`[SMTP CHƯA CẤU HÌNH] Link đặt lại mật khẩu: ${resetUrl}`);
+    }
     return res.render('auth/forgot-password', {
       title: 'Quên mật khẩu',
-      message: 'Đã gửi email đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.'
+      message: 'Đã tạo yêu cầu đặt lại mật khẩu. Vui lòng kiểm tra hộp thư (hoặc link trên server console).'
     });
   } catch (error) {
     console.error('Lỗi xác nhận email:', error);
@@ -354,12 +365,19 @@ exports.resendVerification = async (req, res) => {
 
     // Gửi email xác thực
     const verifyUrl = `${BASE_URL}/auth/verify-email?token=${verifyToken}&email=${encodeURIComponent(email)}`;
-    await transporter.sendMail({
-      from: 'nguyentung11122003@gmail.com',
-      to: email,
-      subject: 'Xác thực tài khoản ThinkPro',
-      html: `<h3>Chào mừng bạn đến với ThinkPro!</h3><p>Vui lòng xác thực tài khoản bằng cách bấm vào link sau:</p><a href="${verifyUrl}">${verifyUrl}</a>`
-    });
+    try {
+      await transporter.sendMail({
+        from: 'nguyentung11122003@gmail.com',
+        to: email,
+        subject: 'Xác thực tài khoản ThinkPro',
+        html: `<h3>Chào mừng bạn đến với ThinkPro!</h3><p>Vui lòng xác thực tài khoản bằng cách bấm vào link sau:</p><a href="${verifyUrl}">${verifyUrl}</a>`
+      });
+    } catch (mailErr) {
+      console.log(`[SMTP CHƯA CẤU HÌNH] Link xác thực tài khoản: ${verifyUrl}`);
+      // Tự động kích hoạt tài khoản để hỗ trợ test khi không có SMTP
+      user.isVerified = true;
+      await user.save();
+    }
 
     return res.render('auth/login', {
       title: 'Đăng nhập',

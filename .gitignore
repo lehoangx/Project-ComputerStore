@@ -1,1 +1,12 @@
+node_modules/
+node_modules
 .env
+*.env
+.env.*
+.vscode/
+.agents/
+SQA/
+SQA
+sqp/
+sqp
+scratch/

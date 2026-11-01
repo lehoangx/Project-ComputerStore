@@ -1005,3 +1005,301 @@ exports.getEditProductForm = async (req, res) => {
     }
 };
 
+
+
+// ==========================================
+// BỔ SUNG CÁC HÀM ADMIN CONTROLLER CÒN THIẾU
+// ==========================================
+
+// Cập nhật sản phẩm
+exports.updateProduct = async (req, res) => {
+    try {
+        const { name, category, price, discountPrice, stock, description, featured, active } = req.body;
+        const updateData = {
+            name,
+            category,
+            price,
+            discountPrice: discountPrice || 0,
+            stock: stock || 0,
+            description,
+            featured: featured === 'on' || featured === true || featured === 'true',
+            active: active === 'on' || active === true || active === 'true'
+        };
+        if (req.files && req.files.length > 0) {
+            updateData.images = req.files.map(file => '/uploads/' + file.filename);
+        }
+        await Product.findByIdAndUpdate(req.params.id, updateData);
+        res.redirect('/admin/products?success=updated');
+    } catch (error) {
+        console.error('Lỗi cập nhật sản phẩm:', error);
+        res.redirect(`/admin/products/edit/${req.params.id}?error=update_failed`);
+    }
+};
+
+// Xóa sản phẩm
+exports.deleteProduct = async (req, res) => {
+    try {
+        await Product.findByIdAndDelete(req.params.id);
+        res.redirect('/admin/products?success=deleted');
+    } catch (error) {
+        console.error('Lỗi xóa sản phẩm:', error);
+        res.redirect('/admin/products?error=delete_failed');
+    }
+};
+
+// Danh sách mã giảm giá
+exports.getCoupons = async (req, res) => {
+    try {
+        const coupons = await Coupon.find().sort({ createdAt: -1 });
+        res.render('admin/coupon/list', {
+            title: 'Quản lý mã giảm giá',
+            user: req.session.user,
+            coupons,
+            success: req.query.success || null,
+            error: req.query.error || null
+        });
+    } catch (error) {
+        console.error('Lỗi lấy danh sách coupon:', error);
+        res.redirect('/admin/dashboard');
+    }
+};
+
+// Form thêm mã giảm giá
+exports.getAddCouponForm = (req, res) => {
+    res.render('admin/coupon/add', {
+        title: 'Thêm mã giảm giá mới',
+        user: req.session.user,
+        couponData: {},
+        error: null
+    });
+};
+
+// Thêm mã giảm giá mới
+exports.addCoupon = async (req, res) => {
+    try {
+        const { code, discountType, discountValue, minSpend, maxDiscount, startDate, endDate, usageLimit } = req.body;
+        const coupon = new Coupon({
+            code: code.toUpperCase(),
+            discountType,
+            discountValue,
+            minSpend: minSpend || 0,
+            maxDiscount: maxDiscount || undefined,
+            startDate,
+            endDate,
+            usageLimit: usageLimit || undefined
+        });
+        await coupon.save();
+        res.redirect('/admin/coupons?success=created');
+    } catch (error) {
+        console.error('Lỗi thêm coupon:', error);
+        res.render('admin/coupon/add', {
+            title: 'Thêm mã giảm giá mới',
+            user: req.session.user,
+            couponData: req.body,
+            error: error.message || 'Lỗi thêm mã giảm giá'
+        });
+    }
+};
+
+// Form sửa mã giảm giá
+exports.getEditCouponForm = async (req, res) => {
+    try {
+        const coupon = await Coupon.findById(req.params.id);
+        if (!coupon) return res.redirect('/admin/coupons?error=not-found');
+        res.render('admin/coupon/edit', {
+            title: 'Chỉnh sửa mã giảm giá',
+            user: req.session.user,
+            coupon,
+            error: null
+        });
+    } catch (error) {
+        console.error('Lỗi xem coupon:', error);
+        res.redirect('/admin/coupons');
+    }
+};
+
+// Cập nhật mã giảm giá
+exports.updateCoupon = async (req, res) => {
+    try {
+        const { code, discountType, discountValue, minSpend, maxDiscount, startDate, endDate, usageLimit, active } = req.body;
+        await Coupon.findByIdAndUpdate(req.params.id, {
+            code: code ? code.toUpperCase() : undefined,
+            discountType,
+            discountValue,
+            minSpend: minSpend || 0,
+            maxDiscount: maxDiscount || undefined,
+            startDate,
+            endDate,
+            usageLimit: usageLimit || undefined,
+            active: active === 'on' || active === true || active === 'true'
+        });
+        res.redirect('/admin/coupons?success=updated');
+    } catch (error) {
+        console.error('Lỗi cập nhật coupon:', error);
+        res.redirect(`/admin/coupons/edit/${req.params.id}?error=update_failed`);
+    }
+};
+
+// Xóa mã giảm giá
+exports.deleteCoupon = async (req, res) => {
+    try {
+        await Coupon.findByIdAndDelete(req.params.id);
+        res.redirect('/admin/coupons?success=deleted');
+    } catch (error) {
+        console.error('Lỗi xóa coupon:', error);
+        res.redirect('/admin/coupons?error=delete_failed');
+    }
+};
+
+// Quản lý đánh giá
+exports.getReviews = async (req, res) => {
+    try {
+        const filterStatus = req.query.status || 'all';
+        const filter = {};
+        if (filterStatus !== 'all') {
+            filter.status = filterStatus;
+        }
+        const reviews = await Review.find(filter)
+            .populate('user')
+            .populate('product')
+            .sort({ createdAt: -1 });
+
+        const totalReviews = await Review.countDocuments();
+        const pendingCount = await Review.countDocuments({ status: 'pending' });
+        const approvedCount = await Review.countDocuments({ status: 'approved' });
+        const rejectedCount = await Review.countDocuments({ status: 'rejected' });
+
+        res.render('admin/review/list', {
+            title: 'Quản lý đánh giá',
+            user: req.session.user,
+            reviews,
+            totalReviews,
+            pendingCount,
+            approvedCount,
+            rejectedCount,
+            filterStatus
+        });
+    } catch (error) {
+        console.error('Lỗi lấy danh sách review:', error);
+        res.redirect('/admin/dashboard');
+    }
+};
+
+// Phê duyệt đánh giá
+exports.approveReview = async (req, res) => {
+    try {
+        await Review.findByIdAndUpdate(req.params.reviewId, { status: 'approved' });
+        res.json({ success: true, message: 'Đã phê duyệt đánh giá' });
+    } catch (error) {
+        console.error('Lỗi duyệt review:', error);
+        res.status(500).json({ success: false, message: 'Lỗi duyệt đánh giá' });
+    }
+};
+
+// Từ chối đánh giá
+exports.rejectReview = async (req, res) => {
+    try {
+        await Review.findByIdAndUpdate(req.params.reviewId, { status: 'rejected' });
+        res.json({ success: true, message: 'Đã từ chối đánh giá' });
+    } catch (error) {
+        console.error('Lỗi từ chối review:', error);
+        res.status(500).json({ success: false, message: 'Lỗi từ chối đánh giá' });
+    }
+};
+
+// Xóa đánh giá
+exports.deleteReview = async (req, res) => {
+    try {
+        await Review.findByIdAndDelete(req.params.reviewId);
+        res.json({ success: true, message: 'Đã xóa đánh giá' });
+    } catch (error) {
+        console.error('Lỗi xóa review:', error);
+        res.status(500).json({ success: false, message: 'Lỗi xóa đánh giá' });
+    }
+};
+
+// Quản lý danh sách đơn hàng
+exports.getOrdersList = async (req, res) => {
+    try {
+        const status = req.query.status;
+        const filter = {};
+        if (status && status !== 'all') {
+            filter.status = status;
+        }
+        const orders = await Order.find(filter)
+            .populate('user')
+            .populate('items.product')
+            .sort({ createdAt: -1 });
+
+        res.render('admin/order/list', {
+            title: 'Quản lý đơn hàng',
+            user: req.session.user,
+            orders,
+            statusFilter: status || 'all',
+            success: req.query.success || null,
+            error: req.query.error || null
+        });
+    } catch (error) {
+        console.error('Lỗi lấy danh sách đơn hàng:', error);
+        res.redirect('/admin/dashboard');
+    }
+};
+
+// Chi tiết đơn hàng admin
+exports.getOrderDetail = async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id)
+            .populate('user')
+            .populate('items.product')
+            .populate('coupon');
+
+        if (!order) return res.redirect('/admin/orders?error=not-found');
+
+        res.render('admin/order/detail', {
+            title: `Chi tiết đơn hàng #${order.orderCode}`,
+            user: req.session.user,
+            order
+        });
+    } catch (error) {
+        console.error('Lỗi xem chi tiết đơn hàng:', error);
+        res.redirect('/admin/orders');
+    }
+};
+
+// Form chỉnh sửa đơn hàng
+exports.getEditOrder = async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id)
+            .populate('user')
+            .populate('items.product');
+
+        if (!order) return res.redirect('/admin/orders?error=not-found');
+
+        res.render('admin/order/edit', {
+            title: `Chỉnh sửa đơn hàng #${order.orderCode}`,
+            user: req.session.user,
+            order,
+            error: null
+        });
+    } catch (error) {
+        console.error('Lỗi trang sửa đơn hàng:', error);
+        res.redirect('/admin/orders');
+    }
+};
+
+// Cập nhật trạng thái đơn hàng
+exports.updateOrder = async (req, res) => {
+    try {
+        const { status, paymentStatus, adminNote, trackingCode } = req.body;
+        await Order.findByIdAndUpdate(req.params.id, {
+            status,
+            paymentStatus,
+            adminNote,
+            trackingCode
+        });
+        res.redirect('/admin/orders?success=updated');
+    } catch (error) {
+        console.error('Lỗi cập nhật đơn hàng:', error);
+        res.redirect(`/admin/orders/edit/${req.params.id}?error=update_failed`);
+    }
+};

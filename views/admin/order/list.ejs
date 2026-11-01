@@ -84,11 +84,11 @@
                                         </a>
                                     </div>
                                 </div>
-                                <% if (success === 'updated') { %>
+                                <% if (typeof success !== 'undefined' && success === 'updated') { %>
                                     <div class="alert alert-success">Cập nhật đơn hàng thành công</div>
                                 <% } %>
 
-                                <% if (error === 'not-found') { %>
+                                <% if (typeof error !== 'undefined' && error === 'not-found') { %>
                                     <div class="alert alert-danger">Không tìm thấy đơn hàng</div>
                                 <% } %>
                                 
